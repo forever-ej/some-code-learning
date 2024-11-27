@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 读取配置文件
 config = configparser.ConfigParser()
-config.read('./config/config.ini')
+config.read('../config/config.ini', encoding='utf-8')
 
 log_path = os.path.abspath(config.get('Paths', 'log_path'))
 out_dir = os.path.abspath(config.get('Paths', 'out_dir'))
@@ -38,6 +38,7 @@ def detect_encoding(file_path):
 # 解析单行日志
 def parse_log_line(line):
     # 使用提供的正则表达式进行匹配
+    logging.debug(f"Parsing log line: {line.strip()}")
     match = re.search(
         r'(\d{8} \d{2}:\d{2}:\d{2}\.\d{6}) \[WritePacket\]KSvrComm (AfterGet|Put|ReplyNull)\[pktid\((\d+)\)\], func: ?(\d+),.*',
         line
@@ -62,6 +63,7 @@ def parse_logs(log_path, encoding):
         for line in file:
             log_entry = parse_log_line(line)
             if not log_entry:
+                logging.debug("Skipped an invalid log line.")
                 continue
 
             pktid = log_entry['pktid']
@@ -70,6 +72,7 @@ def parse_logs(log_path, encoding):
             if action == 'AfterGet':
                 # 初始化请求条目
                 if pktid not in requests:
+                    logging.debug(f"Initializing request for pktid: {pktid}")
                     requests[pktid] = {
                         'func': log_entry['func'],
                         'recv_time': log_entry['timestamp'],
@@ -86,9 +89,12 @@ def parse_logs(log_path, encoding):
                         requests[pktid]['first_reply'] = log_entry['timestamp']
                     requests[pktid]['last_reply'] = log_entry['timestamp']
                     requests[pktid]['success'] = True
+                    logging.debug(f"Updated request for pktid: {pktid}, action: {action}")
                 else:
+                    logging.warning(f"Received a reply for an unknown pktid: {pktid}")
                     continue
             else:
+                logging.warning(f"Unknown action: {action}")
                 continue
 
     # 计算耗时
@@ -106,9 +112,12 @@ def parse_logs(log_path, encoding):
                 req['output_time'] = (last_reply_time - first_reply_time).total_seconds()
             else:
                 req['output_time'] = 0
+                logging.warning(f"No first_reply for pktid: {req['pktid']}")
+            logging.debug(f"Calculated proc_time and output_time for pktid: {req['pktid']}")
         else:
             req['proc_time'] = 0
             req['output_time'] = 0
+            logging.debug(f"No replies for pktid: {req['pktid']}")
 
     return requests
 
@@ -117,31 +126,15 @@ def write_requests(requests, out_dir_path, by_time=False):
     # 确保目录存在
     os.makedirs(out_dir_path, exist_ok=True)
 
-    for req in requests.values():
-        with open(os.path.join(out_dir_path, 'requests.txt'), 'w', encoding='gb2312') as f:
-            for req in requests.values():
-                if 'pktid' not in req or 'func' not in req or 'recv_time' not in req:
-                    continue
-                f.write(f"pktid: {req['pktid']}, func: {req['func']}, recv_time: {req['recv_time']}, ")
-                f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
-                f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
-                f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
-
-
-# 将每个功能的数据分别写入各自的文件中
-def write_requests_per_function(requests, out_dir_path, by_time=False):
-    # 确保目录存在
-    os.makedirs(out_dir_path, exist_ok=True)
-
-    # 按功能写入文件
-    for func in set(req['func'] for req in requests.values()):
-        with open(os.path.join(out_dir_path, f'requests_func_{func}.txt'), 'w', encoding='gb2312') as f:
-            for req in requests.values():
-                if req['func'] == func:
-                    f.write(f"pktid: {req['pktid']}, recv_time: {req['recv_time']}, ")
-                    f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
-                    f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
-                    f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
+    with open(os.path.join(out_dir_path, 'requests.txt'), 'w', encoding='gb2312') as f:
+        for req in requests.values():
+            if 'pktid' not in req or 'func' not in req or 'recv_time' not in req:
+                logging.warning(f"Skipping incomplete request: {req}")
+                continue
+            f.write(f"pktid: {req['pktid']}, func: {req['func']}, recv_time: {req['recv_time']}, ")
+            f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
+            f.write(f"proc_time: {req.get('proc_time', 0)}, output_time: {req.get('output_time', 0)}, success: {req['success']}\n")
+            logging.debug(f"Written request to file: {req}")
 
 # 生成汇总分析结果
 def generate_summary(requests, out_dir_path):
@@ -208,7 +201,7 @@ def main():
         encoding = detect_encoding(log_path) if auto_detect else 'gb2312'
         requests = parse_logs(log_path, encoding)
         write_requests(requests, out_dir, by_time)
-        write_requests_per_function(requests, out_dir, by_time)
+        # write_requests_per_function(requests, out_dir, by_time)
         generate_summary(requests, out_dir)
         generate_intervals(requests, out_dir, interval)
     except Exception as e:
