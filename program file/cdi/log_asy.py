@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 读取配置文件
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read('./config/config.ini')
 
 log_path = os.path.abspath(config.get('Paths', 'log_path'))
 out_dir = os.path.abspath(config.get('Paths', 'out_dir'))
