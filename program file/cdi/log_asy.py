@@ -7,12 +7,12 @@ import chardet
 import re
 import configparser
 
-# ��缃��ュ�锛�灏��ュ�绾у��璁剧疆涓�INFO锛�杩��峰氨涓�浼�杈���DEBUG绾у����璋�璇�淇℃��浜�
+# 配置日志，将日志级别设置为INFO，这样就不会输出DEBUG级别的调试信息了
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 璇诲����缃���浠�
+# 读取配置文件
 config = configparser.ConfigParser()
-config.read('./config/config.ini')
+config.read('config.ini')
 
 log_path = os.path.abspath(config.get('Paths', 'log_path'))
 out_dir = os.path.abspath(config.get('Paths', 'out_dir'))
@@ -22,22 +22,22 @@ auto_detect = config.getboolean('Encoding', 'auto_detect')
 start_time = config.get('TimeIntervals', 'start_time')
 end_time = config.get('TimeIntervals','end_time')
 
-# 缂�瀛�缂���
+# 缓存编码
 encoding_cache = {}
 
-# ���ㄦ�娴���浠剁���
+# 自动检测文件编码
 def detect_encoding(file_path):
     if file_path in encoding_cache:
         return encoding_cache[file_path]
     with open(file_path, 'rb') as f:
-        content = f.read(4096)  # 璇诲����4KB��瀹�
+        content = f.read(4096)  # 读取前4KB内容
         result = chardet.detect(content)
     encoding_cache[file_path] = result['encoding']
     return result['encoding']
 
-# 瑙ｆ����琛��ュ�
+# 解析单行日志
 def parse_log_line(line):
-    # 浣跨�ㄦ��渚���姝ｅ��琛ㄨ揪寮�杩�琛��归��
+    # 使用提供的正则表达式进行匹配
     match = re.search(
         r'(\d{8} \d{2}:\d{2}:\d{2}\.\d{6}) \[WritePacket\]KSvrComm (AfterGet|Put|ReplyNull)\[pktid\((\d+)\)\], func: ?(\d+),.*',
         line
@@ -45,16 +45,16 @@ def parse_log_line(line):
     if not match:
         return None
 
-    # �����归����缁�
+    # 提取匹配的组
     timestamp, action, pktid, func = match.groups()
 
-    # ����Info�ㄥ��
-    info_start = match.end() + 1  # 璺宠�绌烘�兼���朵�����绗�
+    # 提取Info部分
+    info_start = match.end() + 1  # 跳过空格或其他分隔符
     info = line[info_start:].strip()
 
     return {'timestamp': timestamp, 'pktid': pktid, 'func': func, 'action': action, 'info': info}
 
-# 瑙ｆ���ュ�骞惰�＄������淇℃��
+# 解析日志并计算所需信息
 def parse_logs(log_path, encoding):
     logging.info(f"Parsing logs from: {log_path}")
     requests = {}
@@ -66,19 +66,18 @@ def parse_logs(log_path, encoding):
 
             pktid = log_entry['pktid']
             action = log_entry['action']
-             # recv_time = datetime.strptime(log_entry['timestamp'], '%Y%m%d %H:%M:%S.%f').strftime('%H:%M:%S') # �板��堕�存�虫�煎���
 
             if action == 'AfterGet':
-                # ��濮���璇锋��＄��
+                # 初始化请求条目
                 if pktid not in requests:
                     requests[pktid] = {
                         'func': log_entry['func'],
-                        'recv_time': log_entry['timestamp'], # 淇��逛负recv_time锛�����涓�log_entry['timestamp']
+                        'recv_time': log_entry['timestamp'],
                         'first_reply': None,
                         'last_reply': None,
                         'replies': [],
                         'success': False,
-                        'pktid': pktid  # 纭�淇� pktid 琚�璁剧疆
+                        'pktid': pktid  # 确保 pktid 被设置
                     }
             elif action in ('Put', 'ReplyNull'):
                 if pktid in requests:
@@ -92,7 +91,7 @@ def parse_logs(log_path, encoding):
             else:
                 continue
 
-    # 璁＄������
+    # 计算耗时
     for req in requests.values():
         if 'pktid' not in req:
             logging.error(f"Request is missing pktid: {req}")
@@ -113,30 +112,28 @@ def parse_logs(log_path, encoding):
 
     return requests
 
-# ���ヨ�锋��版��
+# 写入请求数据
 def write_requests(requests, out_dir_path, by_time=False):
-    # 纭�淇���褰�瀛���
+    # 确保目录存在
     os.makedirs(out_dir_path, exist_ok=True)
 
     for req in requests.values():
-        # if start_time <= req['recv_time'] <= end_time: # 妫��ユ�堕�存�����ㄦ��瀹����村��
-            with open(os.path.join(out_dir_path, 'requests.txt'), 'w', encoding='gb2312') as f:
-                for req in requests.values():
-                    if 'pktid' not in req or 'func' not in req or 'recv_time' not in req:
-                        continue
-                    f.write(f"pktid: {req['pktid']}, func: {req['func']}, recv_time: {req['recv_time']}, ")
-                    f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
-                    f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
-                    f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
-        # else:
-            # return  # 璺宠�涓��ㄦ��瀹��堕�磋���村����璇锋�
+        with open(os.path.join(out_dir_path, 'requests.txt'), 'w', encoding='gb2312') as f:
+            for req in requests.values():
+                if 'pktid' not in req or 'func' not in req or 'recv_time' not in req:
+                    continue
+                f.write(f"pktid: {req['pktid']}, func: {req['func']}, recv_time: {req['recv_time']}, ")
+                f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
+                f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
+                f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
 
-# 灏�姣�涓����界���版���������ュ��������浠朵腑
+
+# 将每个功能的数据分别写入各自的文件中
 def write_requests_per_function(requests, out_dir_path, by_time=False):
-    # 纭�淇���褰�瀛���
+    # 确保目录存在
     os.makedirs(out_dir_path, exist_ok=True)
 
-    # �����藉���ユ��浠�
+    # 按功能写入文件
     for func in set(req['func'] for req in requests.values()):
         with open(os.path.join(out_dir_path, f'requests_func_{func}.txt'), 'w', encoding='gb2312') as f:
             for req in requests.values():
@@ -146,7 +143,7 @@ def write_requests_per_function(requests, out_dir_path, by_time=False):
                     f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
                     f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
 
-# ����姹��诲����缁���
+# 生成汇总分析结果
 def generate_summary(requests, out_dir_path):
     logging.info("Generating summary")
     summary = defaultdict(lambda: {
@@ -171,7 +168,7 @@ def generate_summary(requests, out_dir_path):
         if summary[func]['req_count'] > 0:
             summary[func]['avg_proc_time'] = summary[func]['total_proc_time'] / summary[func]['req_count']
 
-    # ���ユ��绘��浠�
+    # 写入汇总文件
     summary_file = os.path.join(out_dir_path, 'summary.txt')
     with open(summary_file, 'w', encoding='utf-8') as f:
         for func, data in sorted(summary.items()):
@@ -180,7 +177,7 @@ def generate_summary(requests, out_dir_path):
                     f"avg_proc_time: {data['avg_proc_time'] * 1000:.3f}ms, "
                     f"req_count: {data['req_count']}, reply_count: {data['reply_count']}\n")
 
-# ����姣�涓��堕�存�电��缁�璁℃�版��
+# 生成每个时间段的统计数据
 def generate_intervals(requests, out_dir_path, interval):
     logging.info("Generating intervals")
     intervals = defaultdict(lambda: {
@@ -197,7 +194,7 @@ def generate_intervals(requests, out_dir_path, interval):
         intervals[interval_start]['reply_count'] += len(req['replies'])
         intervals[interval_start]['total_proc_time'] += req['proc_time']
 
-    # ���ユ�堕�撮�撮��缁�璁℃��浠�
+    # 写入时间间隔统计文件
     intervals_file = os.path.join(out_dir_path, 'intervals.txt')
     with open(intervals_file, 'w', encoding='utf-8') as f:
         for interval, data in sorted(intervals.items()):
@@ -205,7 +202,7 @@ def generate_intervals(requests, out_dir_path, interval):
             f.write(f"interval: {interval.strftime('%Y%m%d %H:%M:%S')}, req_count: {data['req_count']}, "
                     f"reply_count: {data['reply_count']}, avg_proc_time: {avg_proc_time * 1000:.3f}ms\n")
 
-# 涓诲�芥��
+# 主函数
 def main():
     try:
         encoding = detect_encoding(log_path) if auto_detect else 'gb2312'

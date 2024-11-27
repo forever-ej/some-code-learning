@@ -1,11 +1,11 @@
-# -*- coding: gb2312 -*-
+# -*- coding: utf-8 -*-
 import configparser
 import os
 import re
 
 def read_config():
     config = configparser.ConfigParser()
-    config.read('./config/config_error.ini')
+    config.read('./config/config.ini')
     return config.get('Directories','search_dirs').split(';')
 
 # 输出结果的文件
@@ -43,7 +43,7 @@ def find_format_statements(content):
 def search_in_file(file_path):
     unique_lines = set()
     try:
-        with open(file_path, 'r', encoding='gb2312') as file:
+        with open(file_path, 'r', encoding='gb2312', errors='replace') as file:
             content = file.read()
             for line in content.splitlines():
                 match1 = pattern1.search(line)
