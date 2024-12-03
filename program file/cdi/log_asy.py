@@ -136,6 +136,22 @@ def write_requests(requests, out_dir_path, by_time=False):
             f.write(f"proc_time: {req.get('proc_time', 0)}, output_time: {req.get('output_time', 0)}, success: {req['success']}\n")
             logging.debug(f"Written request to file: {req}")
 
+# 按功能写入请求数据
+def write_requests_per_function(requests, out_dir_path, by_time=False):
+    # 确保目录存在
+    os.makedirs(out_dir_path, exist_ok=True)
+
+    # 按功能写入文件
+    for func in set(req['func'] for req in requests.values()):
+        with open(os.path.join(out_dir_path, f'requests_func_{func}.txt'), 'w', encoding='gb2312') as f:
+            for req in requests.values():
+                if req['func'] == func:
+                    f.write(f"pktid: {req['pktid']}, recv_time: {req['recv_time']}, ")
+                    f.write(f"first_reply: {req.get('first_reply', 'N/A')}, last_reply: {req.get('last_reply', 'N/A')}, ")
+                    f.write(f"proc_time: {req.get('proc_time', 0) * 1000:.3f}ms, ")
+                    f.write(f"output_time: {req.get('output_time', 0) * 1000:.3f}ms, success: {req['success']}\n")
+
+
 # 生成汇总分析结果
 def generate_summary(requests, out_dir_path):
     logging.info("Generating summary")
@@ -163,9 +179,9 @@ def generate_summary(requests, out_dir_path):
 
     # 写入汇总文件
     summary_file = os.path.join(out_dir_path, 'summary.txt')
-    with open(summary_file, 'w', encoding='utf-8') as f:
+    with open(summary_file, 'w', encoding='gb2312') as f:
         for func, data in sorted(summary.items()):
-            f.write(f"func: {func}, max_proc_time: {data['max_proc_time']:.3f}s, "
+            f.write(f"func: {func}, max_proc_time: {data['max_proc_time'] * 1000:.3f}ms, "
                     f"min_proc_time: {data['min_proc_time'] * 1000:.3f}ms, "
                     f"avg_proc_time: {data['avg_proc_time'] * 1000:.3f}ms, "
                     f"req_count: {data['req_count']}, reply_count: {data['reply_count']}\n")
@@ -189,7 +205,7 @@ def generate_intervals(requests, out_dir_path, interval):
 
     # 写入时间间隔统计文件
     intervals_file = os.path.join(out_dir_path, 'intervals.txt')
-    with open(intervals_file, 'w', encoding='utf-8') as f:
+    with open(intervals_file, 'w', encoding='gb2312') as f:
         for interval, data in sorted(intervals.items()):
             avg_proc_time = data['total_proc_time'] / data['req_count'] if data['req_count'] > 0 else 0
             f.write(f"interval: {interval.strftime('%Y%m%d %H:%M:%S')}, req_count: {data['req_count']}, "
@@ -201,7 +217,7 @@ def main():
         encoding = detect_encoding(log_path) if auto_detect else 'gb2312'
         requests = parse_logs(log_path, encoding)
         write_requests(requests, out_dir, by_time)
-        # write_requests_per_function(requests, out_dir, by_time)
+        write_requests_per_function(requests, out_dir, by_time)
         generate_summary(requests, out_dir)
         generate_intervals(requests, out_dir, interval)
     except Exception as e:
