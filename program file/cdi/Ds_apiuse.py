@@ -1,7 +1,7 @@
 from openai import OpenAI
 
 # 使用环境变量管理 API 密钥
-api_key = 'sk-fd62c44ccc844307bdf865862de199a3'
+api_key = ''
 if not api_key:
     raise ValueError("请设置环境变量 OPENAI_API_KEY")
 
